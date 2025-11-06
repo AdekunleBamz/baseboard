@@ -1,21 +1,18 @@
 {
-  "name": "BaseBoard",
-  "description": "BaseBoard allows users to enter a wallet address (or ENS name) and analyze its activity on the Base chain with beautiful data visualizations.",
-  "iconUrl": "https://baseboard-gamma.vercel.app/icon.png",
-  "homeUrl": "https://baseboard-gamma.vercel.app",
-  "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook",
-  "splashImageUrl": "https://baseboard-gamma.vercel.app/splash.png",
-  "splashBackgroundColor": "#6200EA",
-  "primaryCategory": "finance",
-  "tags": ["base", "analytics", "wallet", "visualizer", "blockchain"],
-  "imageUrl": "https://baseboard-gamma.vercel.app/image.png",
-  "heroImageUrl": "https://baseboard-gamma.vercel.app/hero.png",
-  "screenshotUrls": [
-    "https://baseboard-gamma.vercel.app/screenshot1.png"
-  ],
-  "buttonTitle": "Open Mini App",
-  "ogTitle": "BaseBoard – Base Chain Visualizer",
-  "ogDescription": "Explore wallet analytics and visualize Base chain activity beautifully.",
-  "ogImageUrl": "https://baseboard-gamma.vercel.app/image.png",
-  "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard+on+Base:+https://baseboard-gamma.vercel.app"
+  "accountAssociation": {
+    "header": "eyJmaWQiOjY1MzQ3OSwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDBjMDkwNjQzOUM2YTZiRDVmNzI0MDkyZjdCZWNlZDkyY2ZhNDI4QTEifQ",
+    "payload": "eyJkb21haW4iOiJiYXNlYm9hcmQtZ2FtbWEudmVyY2VsLmFwcCJ9",
+    "signature": "wLm27Or4zyRI41mi50GFWqnOYSrQxjUplFOpkRxxRxlvJEA/oI/N5gwMg50+0gTBLl95lFOfMDN5LiWKiahWjhw="
+  },
+  "frame": {
+    "version": "1",
+    "name": "BaseBoard – Base Chain Visualizer",
+    "iconUrl": "https://baseboard-gamma.vercel.app/icon.png",
+    "homeUrl": "https://baseboard-gamma.vercel.app",
+    "imageUrl": "https://baseboard-gamma.vercel.app/image.png",
+    "buttonTitle": "Open BaseBoard",
+    "splashImageUrl": "https://baseboard-gamma.vercel.app/splash.png",
+    "splashBackgroundColor": "#0052FF",
+    "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook"
+  }
 }
