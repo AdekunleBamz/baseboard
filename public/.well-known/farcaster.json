@@ -1,1 +1,18 @@
-{}
+{
+  "name": "BaseBoard",
+  "icon": "https://baseboard.vercel.app/icon.png",
+  "description": "Analyze wallet activity on the Base blockchain",
+  "url": "https://baseboard.vercel.app",
+  "frames": {
+    "version": "next",
+    "imageUrl": "https://baseboard.vercel.app/frame-image.png",
+    "button": {
+      "title": "Open BaseBoard",
+      "action": {
+        "type": "launch_frame",
+        "name": "BaseBoard",
+        "url": "https://baseboard.vercel.app"
+      }
+    }
+  }
+}
