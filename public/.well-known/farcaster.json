@@ -6,13 +6,21 @@
   },
   "frame": {
     "version": "1",
-    "name": "BaseBoard – Base Chain Visualizer",
+    "name": "BaseBoard",
+    "description": "BaseBoard lets users visualize and analyze wallet activity on the Base chain — including transaction count, gas spent, first/last activity, and contract interactions.",
     "iconUrl": "https://baseboard-gamma.vercel.app/icon.png",
     "homeUrl": "https://baseboard-gamma.vercel.app",
     "imageUrl": "https://baseboard-gamma.vercel.app/image.png",
-    "buttonTitle": "Open BaseBoard",
     "splashImageUrl": "https://baseboard-gamma.vercel.app/splash.png",
-    "splashBackgroundColor": "#0052FF",
-    "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook"
+    "splashBackgroundColor": "#ffffff",
+    "buttonTitle": "Open BaseBoard",
+    "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook",
+    "tags": ["base", "wallet", "analytics", "visualizer", "farcaster"],
+    "primaryCategory": "finance",
+    "subtitle": "Base Wallet Visualizer",
+    "ogTitle": "BaseBoard – Explore Your Base Wallet Activity",
+    "ogDescription": "Discover and visualize wallet analytics on the Base chain in one clean dashboard.",
+    "ogImageUrl": "https://baseboard-gamma.vercel.app/image.png",
+    "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard+on+Base:+https://baseboard-gamma.vercel.app"
   }
 }
