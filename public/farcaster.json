@@ -1,0 +1,24 @@
+{
+  "name": "BaseBoard",
+  "description": "BaseBoard allows users to enter a wallet address (or an ENS name) and analyze its activity on the Base chain.",
+  "homeUrl": "https://baseboard-gamma.vercel.app",
+  "iconUrl": "https://baseboard-gamma.vercel.app/icon.png",
+  "splashImageUrl": "https://baseboard-gamma.vercel.app/splash.png",
+  "splashBackgroundColor": "#6200EA",
+  "primaryCategory": "finance",
+  "subtitle": "Base dash-visualizer",
+  "tagline": "Grow, Raid & Rise in Stoke Fire",
+  "buttonTitle": "Open mini app",
+  "imageUrl": "https://baseboard-gamma.vercel.app/image.png",
+  "ogTitle": "BaseBoard – Base Visualizer",
+  "ogDescription": "Visualize your Base wallet data beautifully on-chain.",
+  "ogImageUrl": "https://baseboard-gamma.vercel.app/og-image.png",
+  "screenshotUrls": [
+    "https://baseboard-gamma.vercel.app/screenshot1.png"
+  ],
+  "heroImageUrl": "https://baseboard-gamma.vercel.app/hero.png",
+  "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook",
+  "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard:+an+on-chain+Base+analytics+visualizer",
+  "tags": ["base", "analytics", "finance", "visualizer", "wallet"],
+  "domain": "baseboard-gamma.vercel.app"
+}

@@ -19,11 +19,10 @@ function App() {
   const handleAnalyze = () => {
     // Placeholder for analysis logic
     if (!walletAddress) {
-      alert('Please enter a wallet address.');
+      console.log('Please enter a wallet address.');
       return;
     }
     console.log('Analyzing wallet:', walletAddress);
-    alert(`Analyzing wallet: ${walletAddress}`);
   };
 
   return (
