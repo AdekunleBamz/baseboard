@@ -28,7 +28,10 @@ function App() {
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '24px' }}>BaseBoard</h1>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <img src="/icon.png" alt="BaseBoard" style={{ height: '28px', width: '28px', borderRadius: '6px', marginRight: '8px' }} />
+          <h1 style={{ fontSize: '24px', margin: 0 }}>BaseBoard</h1>
+        </div>
         <ConnectMenu />
       </header>
       <main style={{ marginTop: '40px' }}>
