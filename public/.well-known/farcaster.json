@@ -18,7 +18,7 @@
     "tags": ["base", "wallet", "analytics", "visualizer", "farcaster"],
     "primaryCategory": "finance",
     "subtitle": "Base Wallet Visualizer",
-    "tagline": "Visualize your Base wallet activity",
+    "tagline": "Base wallet visualizer",
     "heroImageUrl": "https://baseboard-gamma.vercel.app/image.png",
     "screenshotUrls": [
       "https://baseboard-gamma.vercel.app/image.png"
