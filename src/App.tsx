@@ -5,8 +5,10 @@ interface WalletStats {
   address: string;
   txCount: number;
   balance: string;
-  firstActivity: string;
-  lastActivity: string;
+  firstTx: string;
+  lastTx: string;
+  basename: string | null;
+  nftCount: number;
 }
 
 function App() {
@@ -34,36 +36,142 @@ function App() {
     
     try {
       // Validate address format
-      if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress.toLowerCase())) {
         throw new Error('Invalid Ethereum address format');
       }
 
-      // Fetch wallet data from Base chain
-      const response = await fetch(`https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&sort=asc&apikey=YourApiKeyToken`);
-      const data = await response.json();
+      const BASE_RPC = 'https://mainnet.base.org';
       
-      if (data.status === '1' && data.result && data.result.length > 0) {
-        const txs = data.result;
-        const firstTx = txs[0];
-        const lastTx = txs[txs.length - 1];
+      // Get balance
+      const balanceResponse = await fetch(BASE_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_getBalance',
+          params: [walletAddress, 'latest'],
+          id: 1
+        })
+      });
+      const balanceData = await balanceResponse.json();
+      const balanceWei = BigInt(balanceData.result || '0');
+      const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
+      
+      // Get transaction count
+      const txCountResponse = await fetch(BASE_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_getTransactionCount',
+          params: [walletAddress, 'latest'],
+          id: 2
+        })
+      });
+      const txCountData = await txCountResponse.json();
+      const txCount = parseInt(txCountData.result || '0x0', 16);
+      
+      // Fetch transaction history from BaseScan (free, no API key needed for basic queries)
+      let firstTx = 'Unknown';
+      let lastTx = 'Unknown';
+      
+      try {
+        const basescanResponse = await fetch(
+          `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10&sort=asc`
+        );
+        const basescanData = await basescanResponse.json();
         
-        setStats({
-          address: walletAddress,
-          txCount: txs.length,
-          balance: 'Fetching...',
-          firstActivity: new Date(Number(firstTx.timeStamp) * 1000).toLocaleDateString(),
-          lastActivity: new Date(Number(lastTx.timeStamp) * 1000).toLocaleDateString()
-        });
-      } else {
-        // No transactions found or API error - show basic info
-        setStats({
-          address: walletAddress,
-          txCount: 0,
-          balance: 'N/A',
-          firstActivity: 'No activity',
-          lastActivity: 'No activity'
-        });
+        if (basescanData.status === '1' && basescanData.result && basescanData.result.length > 0) {
+          const txs = basescanData.result;
+          firstTx = new Date(Number(txs[0].timeStamp) * 1000).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          
+          // Get last tx with another query
+          const lastTxResponse = await fetch(
+            `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc`
+          );
+          const lastTxData = await lastTxResponse.json();
+          if (lastTxData.status === '1' && lastTxData.result && lastTxData.result.length > 0) {
+            lastTx = new Date(Number(lastTxData.result[0].timeStamp) * 1000).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          }
+        }
+      } catch (txErr) {
+        console.error('Transaction history fetch error:', txErr);
       }
+      
+      // Try to get Basename (using Base's name registry contract)
+      let basename: string | null = null;
+      try {
+        // Base Name Registry contract address
+        const nameRegistryResponse = await fetch(BASE_RPC, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [{
+              to: '0x4ccb0bb02fcaba27e82a56646e81d8c5bc4119a5', // Base Name Resolver
+              data: `0x691f3431${walletAddress.slice(2).padStart(64, '0')}` // reverseNameOf
+            }, 'latest'],
+            id: 3
+          })
+        });
+        const nameData = await nameRegistryResponse.json();
+        if (nameData.result && nameData.result !== '0x') {
+          // Parse the name from hex
+          const hexString = nameData.result.slice(2);
+          if (hexString.length > 128) {
+            const nameBytes = hexString.slice(128);
+            let name = '';
+            for (let i = 0; i < nameBytes.length; i += 2) {
+              const byte = parseInt(nameBytes.substr(i, 2), 16);
+              if (byte !== 0) name += String.fromCharCode(byte);
+            }
+            if (name.length > 0) basename = name;
+          }
+        }
+      } catch (nameErr) {
+        console.error('Basename fetch error:', nameErr);
+      }
+      
+      // Get NFT count (using simple estimation via contract call traces)
+      let nftCount = 0;
+      try {
+        // Query for ERC721 Transfer events to this address
+        const nftResponse = await fetch(
+          `https://api.basescan.org/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=100&sort=desc`
+        );
+        const nftData = await nftResponse.json();
+        if (nftData.status === '1' && nftData.result) {
+          // Count unique token contracts
+          const uniqueContracts = new Set(nftData.result.map((tx: any) => tx.contractAddress));
+          nftCount = uniqueContracts.size;
+        }
+      } catch (nftErr) {
+        console.error('NFT fetch error:', nftErr);
+      }
+
+      setStats({
+        address: walletAddress,
+        txCount: txCount,
+        balance: `${balanceEth} ETH`,
+        firstTx,
+        lastTx,
+        basename,
+        nftCount
+      });
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch wallet data. Please try again.');
     } finally {
@@ -192,29 +300,73 @@ function App() {
                   border: '1px solid rgba(0, 82, 255, 0.2)',
                   textAlign: 'left'
                 }}>
-                  <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#181818' }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#181818', fontSize: '20px' }}>
                     Wallet Analysis
                   </h3>
-                  <div style={{ display: 'grid', gap: '12px' }}>
+                  <div style={{ display: 'grid', gap: '16px' }}>
+                    {stats.basename && (
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: 'rgba(0, 82, 255, 0.1)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(0, 82, 255, 0.3)'
+                      }}>
+                        <strong style={{ color: '#0052FF', fontSize: '16px' }}>🔵 Basename:</strong>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '4px', color: '#0052FF' }}>
+                          {stats.basename}
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <strong style={{ color: '#666' }}>Address:</strong>
-                      <div style={{ fontFamily: 'monospace', fontSize: '14px', marginTop: '4px' }}>
+                      <div style={{ fontFamily: 'monospace', fontSize: '13px', marginTop: '4px', wordBreak: 'break-all' }}>
                         {stats.address}
                       </div>
                     </div>
-                    <div>
-                      <strong style={{ color: '#666' }}>Total Transactions:</strong>
-                      <div style={{ fontSize: '18px', color: '#0052FF', marginTop: '4px' }}>
-                        {stats.txCount.toLocaleString()}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div style={{
+                        padding: '16px',
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0'
+                      }}>
+                        <strong style={{ color: '#666', fontSize: '14px' }}>Balance</strong>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0052FF', marginTop: '8px' }}>
+                          {stats.balance}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: '16px',
+                        backgroundColor: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0'
+                      }}>
+                        <strong style={{ color: '#666', fontSize: '14px' }}>Transactions</strong>
+                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0052FF', marginTop: '8px' }}>
+                          {stats.txCount.toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <strong style={{ color: '#666' }}>First Activity:</strong>
-                      <div style={{ marginTop: '4px' }}>{stats.firstActivity}</div>
+                    <div style={{
+                      padding: '16px',
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      border: '1px solid #e0e0e0'
+                    }}>
+                      <strong style={{ color: '#666', fontSize: '14px' }}>NFT Collections</strong>
+                      <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0052FF', marginTop: '8px' }}>
+                        {stats.nftCount} {stats.nftCount === 1 ? 'collection' : 'collections'}
+                      </div>
                     </div>
-                    <div>
-                      <strong style={{ color: '#666' }}>Last Activity:</strong>
-                      <div style={{ marginTop: '4px' }}>{stats.lastActivity}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '8px' }}>
+                      <div>
+                        <strong style={{ color: '#666', fontSize: '14px' }}>First Transaction:</strong>
+                        <div style={{ marginTop: '6px', fontSize: '14px' }}>{stats.firstTx}</div>
+                      </div>
+                      <div>
+                        <strong style={{ color: '#666', fontSize: '14px' }}>Last Transaction:</strong>
+                        <div style={{ marginTop: '6px', fontSize: '14px' }}>{stats.lastTx}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
