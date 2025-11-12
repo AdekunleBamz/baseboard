@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
-import { useAccount, useConnect } from "wagmi";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
+
+interface WalletStats {
+  address: string;
+  txCount: number;
+  balance: string;
+  firstActivity: string;
+  lastActivity: string;
+}
 
 function App() {
   const [walletAddress, setWalletAddress] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [stats, setStats] = useState<WalletStats | null>(null);
+  const [error, setError] = useState<string>('');
   const { address, isConnected } = useAccount();
 
   useEffect(() => {
@@ -11,13 +22,53 @@ function App() {
     }
   }, [address, isConnected]);
 
-  const handleAnalyze = () => {
-    // Placeholder for analysis logic
+  const handleAnalyze = async () => {
     if (!walletAddress) {
-      console.log('Please enter a wallet address.');
+      setError('Please enter a wallet address.');
       return;
     }
-    console.log('Analyzing wallet:', walletAddress);
+    
+    setAnalyzing(true);
+    setError('');
+    setStats(null);
+    
+    try {
+      // Validate address format
+      if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        throw new Error('Invalid Ethereum address format');
+      }
+
+      // Fetch wallet data from Base chain
+      const response = await fetch(`https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&sort=asc&apikey=YourApiKeyToken`);
+      const data = await response.json();
+      
+      if (data.status === '1' && data.result && data.result.length > 0) {
+        const txs = data.result;
+        const firstTx = txs[0];
+        const lastTx = txs[txs.length - 1];
+        
+        setStats({
+          address: walletAddress,
+          txCount: txs.length,
+          balance: 'Fetching...',
+          firstActivity: new Date(Number(firstTx.timeStamp) * 1000).toLocaleDateString(),
+          lastActivity: new Date(Number(lastTx.timeStamp) * 1000).toLocaleDateString()
+        });
+      } else {
+        // No transactions found or API error - show basic info
+        setStats({
+          address: walletAddress,
+          txCount: 0,
+          balance: 'N/A',
+          firstActivity: 'No activity',
+          lastActivity: 'No activity'
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch wallet data. Please try again.');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (
@@ -87,32 +138,87 @@ function App() {
                 />
                 <button
                   onClick={handleAnalyze}
+                  disabled={analyzing}
                   style={{ 
                     padding: '14px 32px', 
                     fontSize: '16px', 
                     fontWeight: '600',
-                    cursor: 'pointer', 
-                    backgroundColor: '#0052FF', 
+                    cursor: analyzing ? 'not-allowed' : 'pointer', 
+                    backgroundColor: analyzing ? '#ccc' : '#0052FF', 
                     color: 'white', 
                     border: 'none', 
                     borderRadius: '8px',
                     transition: 'all 0.2s',
-                    boxShadow: '0 4px 12px rgba(0, 82, 255, 0.3)'
+                    boxShadow: analyzing ? 'none' : '0 4px 12px rgba(0, 82, 255, 0.3)'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#0041CC';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 82, 255, 0.4)';
+                    if (!analyzing) {
+                      e.currentTarget.style.backgroundColor = '#0041CC';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 82, 255, 0.4)';
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#0052FF';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 82, 255, 0.3)';
+                    if (!analyzing) {
+                      e.currentTarget.style.backgroundColor = '#0052FF';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 82, 255, 0.3)';
+                    }
                   }}
                 >
-                  Analyze
+                  {analyzing ? 'Analyzing...' : 'Analyze'}
                 </button>
               </div>
+
+              {error && (
+                <div style={{
+                  marginTop: '20px',
+                  padding: '12px',
+                  backgroundColor: '#fee',
+                  color: '#c33',
+                  borderRadius: '8px',
+                  fontSize: '14px'
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {stats && (
+                <div style={{
+                  marginTop: '30px',
+                  padding: '24px',
+                  backgroundColor: 'rgba(0, 82, 255, 0.05)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(0, 82, 255, 0.2)',
+                  textAlign: 'left'
+                }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#181818' }}>
+                    Wallet Analysis
+                  </h3>
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    <div>
+                      <strong style={{ color: '#666' }}>Address:</strong>
+                      <div style={{ fontFamily: 'monospace', fontSize: '14px', marginTop: '4px' }}>
+                        {stats.address}
+                      </div>
+                    </div>
+                    <div>
+                      <strong style={{ color: '#666' }}>Total Transactions:</strong>
+                      <div style={{ fontSize: '18px', color: '#0052FF', marginTop: '4px' }}>
+                        {stats.txCount.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <strong style={{ color: '#666' }}>First Activity:</strong>
+                      <div style={{ marginTop: '4px' }}>{stats.firstActivity}</div>
+                    </div>
+                    <div>
+                      <strong style={{ color: '#666' }}>Last Activity:</strong>
+                      <div style={{ marginTop: '4px' }}>{stats.lastActivity}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -124,20 +230,49 @@ function App() {
 function ConnectMenu() {
   const { isConnected, address } = useAccount();
   const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
 
   if (isConnected) {
     return (
-      <div style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        padding: '10px 16px',
-        borderRadius: '8px',
-        border: '1px solid #e0e0e0',
-        fontSize: '14px',
-        fontWeight: '500',
-        color: '#181818',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
-      }}>
-        Connected: {address?.slice(0, 6)}...{address?.slice(-4)}
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          padding: '10px 16px',
+          borderRadius: '8px',
+          border: '1px solid #e0e0e0',
+          fontSize: '14px',
+          fontWeight: '500',
+          color: '#181818',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
+        }}>
+          {address?.slice(0, 6)}...{address?.slice(-4)}
+        </div>
+        <button
+          type="button"
+          onClick={() => disconnect()}
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            border: '1px solid #ff4444',
+            fontSize: '14px',
+            fontWeight: '600',
+            color: '#ff4444',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#ff4444';
+            e.currentTarget.style.color = 'white';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+            e.currentTarget.style.color = '#ff4444';
+          }}
+        >
+          Disconnect
+        </button>
       </div>
     );
   }
