@@ -40,14 +40,7 @@ function App() {
         throw new Error('Invalid Ethereum address format');
       }
 
-      // Get API key from environment variable
-      const ETHERSCAN_API_KEY = import.meta.env.VITE_BASESCAN_API_KEY;
       const BASE_RPC = 'https://mainnet.base.org';
-      const BASE_CHAIN_ID = 8453; // Base mainnet chain ID for Etherscan V2
-      
-      if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'YourApiKeyToken') {
-        throw new Error('Please set VITE_BASESCAN_API_KEY in your .env.local file. Get your free API key at https://etherscan.io/myapikey');
-      }
       
       // Get balance from Base RPC
       const balanceResponse = await fetch(BASE_RPC, {
@@ -64,40 +57,88 @@ function App() {
       const balanceWei = BigInt(balanceData.result || '0');
       const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
       
-      // Fetch ALL transaction history using Etherscan API V2
-      const etherscanResponse = await fetch(
-        `https://api.etherscan.io/v2/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
-      );
-      const etherscanData = await etherscanResponse.json();
+      // Get transaction count from Base RPC (nonce = number of transactions sent)
+      const txCountResponse = await fetch(BASE_RPC, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_getTransactionCount',
+          params: [walletAddress, 'latest'],
+          id: 2
+        })
+      });
+      const txCountData = await txCountResponse.json();
+      const sentTxCount = parseInt(txCountData.result || '0x0', 16);
       
-      let txCount = 0;
+      // Get transaction history using Base RPC - query recent blocks
+      let txCount = sentTxCount;
       let firstTx = 'No transactions found';
       let lastTx = 'No transactions found';
       
-      if (etherscanData.status === '1' && etherscanData.result && etherscanData.result.length > 0) {
-        const txs = etherscanData.result;
-        txCount = txs.length;
-        
-        // First transaction
-        firstTx = new Date(Number(txs[0].timeStamp) * 1000).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
+      try {
+        // Get latest block number
+        const latestBlockResponse = await fetch(BASE_RPC, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
+            params: [],
+            id: 3
+          })
         });
+        const latestBlockData = await latestBlockResponse.json();
+        const latestBlockNum = parseInt(latestBlockData.result || '0x0', 16);
         
-        // Last transaction
-        const lastTransaction = txs[txs.length - 1];
-        lastTx = new Date(Number(lastTransaction.timeStamp) * 1000).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-      } else if (etherscanData.message === 'NOTOK') {
-        throw new Error(`Etherscan API Error: ${etherscanData.result || 'Invalid API key or rate limit exceeded'}`);
+        // Check last 5 blocks for wallet activity to find most recent transaction
+        let foundLastTx = false;
+        for (let i = 0; i < 5 && !foundLastTx; i++) {
+          const blockNum = latestBlockNum - i;
+          const blockHex = '0x' + blockNum.toString(16);
+          
+          const blockResponse = await fetch(BASE_RPC, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'eth_getBlockByNumber',
+              params: [blockHex, true],
+              id: 4 + i
+            })
+          });
+          const blockData = await blockResponse.json();
+          
+          if (blockData.result && blockData.result.transactions) {
+            const relevantTx = blockData.result.transactions.find((tx: any) => 
+              tx.from?.toLowerCase() === walletAddress.toLowerCase() || 
+              tx.to?.toLowerCase() === walletAddress.toLowerCase()
+            );
+            
+            if (relevantTx) {
+              const blockTimestamp = parseInt(blockData.result.timestamp, 16);
+              lastTx = new Date(blockTimestamp * 1000).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+              foundLastTx = true;
+            }
+          }
+        }
+        
+        // Note: Getting first transaction requires querying from genesis block (0)
+        // which is too slow via RPC. Transaction count shows sent transactions only.
+        // For full history including received transactions, an indexer API is needed.
+        if (!foundLastTx) {
+          lastTx = 'Check recent blocks only';
+        }
+        firstTx = 'Requires indexer API';
+      } catch (rpcErr) {
+        console.log('RPC transaction history query error:', rpcErr);
+        // Continue with basic data
       }
       
       // Get Basename using public resolver
@@ -116,25 +157,11 @@ function App() {
         // Basename is optional, so just continue
       }
       
-      // Get NFT holdings using Etherscan API V2
+      // NFT holdings - requires API for accurate count
+      // Base RPC doesn't provide NFT ownership data directly
       let nftCount = 0;
-      try {
-        const nftResponse = await fetch(
-          `https://api.etherscan.io/v2/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
-        );
-        const nftData = await nftResponse.json();
-        
-        if (nftData.status === '1' && nftData.result) {
-          // Count unique NFT contracts where user received tokens
-          const receivedNFTs = nftData.result.filter((tx: any) => 
-            tx.to.toLowerCase() === walletAddress.toLowerCase()
-          );
-          const uniqueContracts = new Set(receivedNFTs.map((tx: any) => tx.contractAddress));
-          nftCount = uniqueContracts.size;
-        }
-      } catch (nftErr) {
-        console.log('NFT data fetch error:', nftErr);
-      }
+      // Note: NFT count requires an indexer API (like Etherscan/Alchemy)
+      // Setting to 0 as we're using RPC only
 
       setStats({
         address: walletAddress,
