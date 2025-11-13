@@ -26,6 +26,6 @@
     "ogTitle": "BaseBoard – Wallet Analytics",
     "ogDescription": "Analyze Base wallet activity with real-time analytics. Track transactions, balance, and NFTs.",
     "ogImageUrl": "https://baseboard-gamma.vercel.app/image.png",
-    "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard+%E2%80%93+analyze+your+Base+wallet+activity:+https://baseboard-gamma.vercel.app"
+    "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard+analyze+your+Base+wallet+activity:+https://baseboard-gamma.vercel.app"
   }
 }
