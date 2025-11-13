@@ -41,11 +41,12 @@ function App() {
       }
 
       // Get API key from environment variable
-      const BASESCAN_API_KEY = import.meta.env.VITE_BASESCAN_API_KEY;
+      const ETHERSCAN_API_KEY = import.meta.env.VITE_BASESCAN_API_KEY;
       const BASE_RPC = 'https://mainnet.base.org';
+      const BASE_CHAIN_ID = 8453; // Base mainnet chain ID for Etherscan V2
       
-      if (!BASESCAN_API_KEY || BASESCAN_API_KEY === 'YourApiKeyToken') {
-        throw new Error('Please set VITE_BASESCAN_API_KEY in your .env.local file. Get your free API key at https://basescan.org/myapikey');
+      if (!ETHERSCAN_API_KEY || ETHERSCAN_API_KEY === 'YourApiKeyToken') {
+        throw new Error('Please set VITE_BASESCAN_API_KEY in your .env.local file. Get your free API key at https://etherscan.io/myapikey');
       }
       
       // Get balance from Base RPC
@@ -63,18 +64,18 @@ function App() {
       const balanceWei = BigInt(balanceData.result || '0');
       const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
       
-      // Fetch ALL transaction history from BaseScan with API key
-      const basescanResponse = await fetch(
-        `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&apikey=${BASESCAN_API_KEY}`
+      // Fetch ALL transaction history using Etherscan API V2
+      const etherscanResponse = await fetch(
+        `https://api.etherscan.io/v2/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
       );
-      const basescanData = await basescanResponse.json();
+      const etherscanData = await etherscanResponse.json();
       
       let txCount = 0;
       let firstTx = 'No transactions found';
       let lastTx = 'No transactions found';
       
-      if (basescanData.status === '1' && basescanData.result && basescanData.result.length > 0) {
-        const txs = basescanData.result;
+      if (etherscanData.status === '1' && etherscanData.result && etherscanData.result.length > 0) {
+        const txs = etherscanData.result;
         txCount = txs.length;
         
         // First transaction
@@ -95,8 +96,8 @@ function App() {
           hour: '2-digit',
           minute: '2-digit'
         });
-      } else if (basescanData.message === 'NOTOK') {
-        throw new Error(`BaseScan API Error: ${basescanData.result || 'Invalid API key or rate limit exceeded'}`);
+      } else if (etherscanData.message === 'NOTOK') {
+        throw new Error(`Etherscan API Error: ${etherscanData.result || 'Invalid API key or rate limit exceeded'}`);
       }
       
       // Get Basename using public resolver
@@ -115,11 +116,11 @@ function App() {
         // Basename is optional, so just continue
       }
       
-      // Get NFT holdings from BaseScan
+      // Get NFT holdings using Etherscan API V2
       let nftCount = 0;
       try {
         const nftResponse = await fetch(
-          `https://api.basescan.org/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1000&sort=desc&apikey=${BASESCAN_API_KEY}`
+          `https://api.etherscan.io/v2/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
         );
         const nftData = await nftResponse.json();
         
