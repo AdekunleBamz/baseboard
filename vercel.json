@@ -6,6 +6,12 @@
       "permanent": false,
       "statusCode": 307
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/share",
+      "destination": "/api/share"
+    }
   ]
 }
 
