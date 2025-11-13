@@ -40,9 +40,15 @@ function App() {
         throw new Error('Invalid Ethereum address format');
       }
 
+      // Get API key from environment variable
+      const BASESCAN_API_KEY = import.meta.env.VITE_BASESCAN_API_KEY;
       const BASE_RPC = 'https://mainnet.base.org';
       
-      // Get balance
+      if (!BASESCAN_API_KEY || BASESCAN_API_KEY === 'YourApiKeyToken') {
+        throw new Error('Please set VITE_BASESCAN_API_KEY in your .env.local file. Get your free API key at https://basescan.org/myapikey');
+      }
+      
+      // Get balance from Base RPC
       const balanceResponse = await fetch(BASE_RPC, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,109 +63,76 @@ function App() {
       const balanceWei = BigInt(balanceData.result || '0');
       const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
       
-      // Get transaction count
-      const txCountResponse = await fetch(BASE_RPC, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'eth_getTransactionCount',
-          params: [walletAddress, 'latest'],
-          id: 2
-        })
-      });
-      const txCountData = await txCountResponse.json();
-      const txCount = parseInt(txCountData.result || '0x0', 16);
+      // Fetch ALL transaction history from BaseScan with API key
+      const basescanResponse = await fetch(
+        `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&apikey=${BASESCAN_API_KEY}`
+      );
+      const basescanData = await basescanResponse.json();
       
-      // Fetch transaction history from BaseScan (free, no API key needed for basic queries)
-      let firstTx = 'Unknown';
-      let lastTx = 'Unknown';
+      let txCount = 0;
+      let firstTx = 'No transactions found';
+      let lastTx = 'No transactions found';
       
-      try {
-        const basescanResponse = await fetch(
-          `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10&sort=asc`
-        );
-        const basescanData = await basescanResponse.json();
+      if (basescanData.status === '1' && basescanData.result && basescanData.result.length > 0) {
+        const txs = basescanData.result;
+        txCount = txs.length;
         
-        if (basescanData.status === '1' && basescanData.result && basescanData.result.length > 0) {
-          const txs = basescanData.result;
-          firstTx = new Date(Number(txs[0].timeStamp) * 1000).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-          
-          // Get last tx with another query
-          const lastTxResponse = await fetch(
-            `https://api.basescan.org/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc`
-          );
-          const lastTxData = await lastTxResponse.json();
-          if (lastTxData.status === '1' && lastTxData.result && lastTxData.result.length > 0) {
-            lastTx = new Date(Number(lastTxData.result[0].timeStamp) * 1000).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            });
-          }
-        }
-      } catch (txErr) {
-        console.error('Transaction history fetch error:', txErr);
+        // First transaction
+        firstTx = new Date(Number(txs[0].timeStamp) * 1000).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        // Last transaction
+        const lastTransaction = txs[txs.length - 1];
+        lastTx = new Date(Number(lastTransaction.timeStamp) * 1000).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } else if (basescanData.message === 'NOTOK') {
+        throw new Error(`BaseScan API Error: ${basescanData.result || 'Invalid API key or rate limit exceeded'}`);
       }
       
-      // Try to get Basename (using Base's name registry contract)
+      // Get Basename using public resolver
       let basename: string | null = null;
       try {
-        // Base Name Registry contract address
-        const nameRegistryResponse = await fetch(BASE_RPC, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_call',
-            params: [{
-              to: '0x4ccb0bb02fcaba27e82a56646e81d8c5bc4119a5', // Base Name Resolver
-              data: `0x691f3431${walletAddress.slice(2).padStart(64, '0')}` // reverseNameOf
-            }, 'latest'],
-            id: 3
-          })
-        });
-        const nameData = await nameRegistryResponse.json();
-        if (nameData.result && nameData.result !== '0x') {
-          // Parse the name from hex
-          const hexString = nameData.result.slice(2);
-          if (hexString.length > 128) {
-            const nameBytes = hexString.slice(128);
-            let name = '';
-            for (let i = 0; i < nameBytes.length; i += 2) {
-              const byte = parseInt(nameBytes.substr(i, 2), 16);
-              if (byte !== 0) name += String.fromCharCode(byte);
-            }
-            if (name.length > 0) basename = name;
-          }
+        // Check if address has a basename registered
+        // Using Basename API endpoint
+        const basenameResponse = await fetch(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`);
+        const basenameData = await basenameResponse.json();
+        
+        if (basenameData && basenameData[walletAddress.toLowerCase()]) {
+          basename = basenameData[walletAddress.toLowerCase()];
         }
       } catch (nameErr) {
-        console.error('Basename fetch error:', nameErr);
+        console.log('Basename lookup not available:', nameErr);
+        // Basename is optional, so just continue
       }
       
-      // Get NFT count (using simple estimation via contract call traces)
+      // Get NFT holdings from BaseScan
       let nftCount = 0;
       try {
-        // Query for ERC721 Transfer events to this address
         const nftResponse = await fetch(
-          `https://api.basescan.org/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=100&sort=desc`
+          `https://api.basescan.org/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1000&sort=desc&apikey=${BASESCAN_API_KEY}`
         );
         const nftData = await nftResponse.json();
+        
         if (nftData.status === '1' && nftData.result) {
-          // Count unique token contracts
-          const uniqueContracts = new Set(nftData.result.map((tx: any) => tx.contractAddress));
+          // Count unique NFT contracts where user received tokens
+          const receivedNFTs = nftData.result.filter((tx: any) => 
+            tx.to.toLowerCase() === walletAddress.toLowerCase()
+          );
+          const uniqueContracts = new Set(receivedNFTs.map((tx: any) => tx.contractAddress));
           nftCount = uniqueContracts.size;
         }
       } catch (nftErr) {
-        console.error('NFT fetch error:', nftErr);
+        console.log('NFT data fetch error:', nftErr);
       }
 
       setStats({
