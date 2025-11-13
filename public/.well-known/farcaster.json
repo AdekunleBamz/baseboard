@@ -7,7 +7,7 @@
   "frame": {
     "version": "1",
     "name": "BaseBoard",
-    "description": "Explore and visualize your Base wallet activity with BaseBoard. Get real-time insights into your transaction history, balance, first and last activity dates, Basename registration, and NFT holdings—all in one clean, easy-to-use interface.",
+    "description": "Explore your Base wallet activity with BaseBoard. Get real-time insights into transaction history, balance, activity dates, Basename, and NFT holdings.",
     "iconUrl": "https://baseboard-gamma.vercel.app/icon.png",
     "homeUrl": "https://baseboard-gamma.vercel.app",
     "imageUrl": "https://baseboard-gamma.vercel.app/image.png",
@@ -17,7 +17,7 @@
     "webhookUrl": "https://baseboard-gamma.vercel.app/api/webhook",
     "tags": ["dashboard", "bamzz", "base", "baseboard", "board"],
     "primaryCategory": "finance",
-    "subtitle": "Analyze Your Base Chain Activity",
+    "subtitle": "Base Chain Analytics",
     "tagline": "Base wallet visualizer",
     "heroImageUrl": "https://baseboard-gamma.vercel.app/image.png",
     "screenshotUrls": [
@@ -26,6 +26,6 @@
     "ogTitle": "BaseBoard – Wallet Analytics",
     "ogDescription": "Analyze Base wallet activity with real-time analytics. Track transactions, balance, and NFTs.",
     "ogImageUrl": "https://baseboard-gamma.vercel.app/image.png",
-    "castShareUrl": "https://warpcast.com/~/compose?text=Analyze+your+Base+wallet+with+BaseBoard:+https://baseboard-gamma.vercel.app"
+    "castShareUrl": "https://warpcast.com/~/compose?text=Check+out+BaseBoard+%E2%80%93+analyze+your+Base+wallet+activity:+https://baseboard-gamma.vercel.app"
   }
 }
