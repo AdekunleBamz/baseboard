@@ -364,8 +364,9 @@ function App() {
           for (const result of results) {
             if (result.status === 'fulfilled' && result.value) {
               // result.value is a Set<string>, iterate over it
-              for (const addr of result.value) {
-                if (addr && addr !== '0x0000000000000000000000000000000000000000') {
+              const tokenSet = result.value as Set<string>;
+              for (const addr of tokenSet) {
+                if (addr && typeof addr === 'string' && addr !== '0x0000000000000000000000000000000000000000') {
                   allTokens.add(addr.toLowerCase());
                 }
               }
