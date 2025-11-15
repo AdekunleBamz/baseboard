@@ -146,45 +146,115 @@ function App() {
       // Get Basename using Base name resolver (with timeout and parallel attempts)
       let basename: string | null = null;
       try {
-        // Try multiple Base name resolver endpoints in parallel with timeout
-        const basenamePromises = [
-          fetchWithTimeout(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`, {}, 5000)
-            .then(async (res) => {
-              if (res.ok) {
-                const data = await res.json();
-                if (data && typeof data === 'object') {
-                  if (data[walletAddress.toLowerCase()]) {
-                    return data[walletAddress.toLowerCase()];
-                  } else if (Array.isArray(data) && data.length > 0) {
-                    return data[0]?.name || data[0];
+        // Base Name Service resolver contract address on Base
+        const BASE_NAME_RESOLVER = '0x4f81C790581b240A5C948Afd173620EcC8C71c8d';
+        const nameFunctionSignature = '0x691f3431'; // name(address)
+        const addressParam = walletAddress.slice(2).toLowerCase().padStart(64, '0');
+        
+        // Try RPC call to Base Name Service resolver contract
+        try {
+          const nameResponse = await fetchWithTimeout(BASE_RPC, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'eth_call',
+              params: [{
+                to: BASE_NAME_RESOLVER,
+                data: nameFunctionSignature + addressParam
+              }, 'latest'],
+              id: 3
+            })
+          }, 8000);
+          
+          const nameData = await nameResponse.json();
+          if (nameData.result && nameData.result !== '0x' && nameData.result !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+            // Decode bytes32 to string (browser-compatible)
+            const hexString = nameData.result.slice(2);
+            // Decode hex to string - Base names are stored as null-terminated strings in bytes32
+            let decodedName = '';
+            for (let i = 0; i < hexString.length; i += 2) {
+              const byte = parseInt(hexString.substr(i, 2), 16);
+              if (byte === 0) break; // Stop at null terminator
+              decodedName += String.fromCharCode(byte);
+            }
+            if (decodedName && decodedName.trim().length > 0) {
+              basename = decodedName.trim();
+            }
+          }
+        } catch (rpcErr) {
+          // Try API endpoints as fallback
+          const basenamePromises = [
+            fetchWithTimeout(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`, {}, 5000)
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data && typeof data === 'object') {
+                      // Try different response formats
+                      if (data[walletAddress.toLowerCase()]) {
+                        return data[walletAddress.toLowerCase()];
+                      }
+                      if (data.names && data.names[walletAddress.toLowerCase()]) {
+                        return data.names[walletAddress.toLowerCase()];
+                      }
+                      if (Array.isArray(data) && data.length > 0) {
+                        const item = data[0];
+                        return item?.name || item?.basename || item;
+                      }
+                      if (data.data && data.data[walletAddress.toLowerCase()]) {
+                        return data.data[walletAddress.toLowerCase()];
+                      }
+                    }
                   }
+                } catch (e) {
+                  // Ignore parsing errors
                 }
-              }
-              return null;
-            })
-            .catch(() => null),
-          fetchWithTimeout(`https://api.basename.app/v1/names/${walletAddress.toLowerCase()}`, {}, 5000)
-            .then(async (res) => {
-              if (res.ok) {
-                const data = await res.json();
-                if (data && data.name) return data.name;
-                if (data && typeof data === 'string') return data;
-              }
-              return null;
-            })
-            .catch(() => null)
-        ];
+                return null;
+              })
+              .catch(() => null),
+            fetchWithTimeout(`https://api.basename.app/v1/names/${walletAddress.toLowerCase()}`, {}, 5000)
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.name) return data.name;
+                    if (data && data.basename) return data.basename;
+                    if (data && typeof data === 'string') return data;
+                    if (data && data.data && data.data.name) return data.data.name;
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null),
+            // Try alternative endpoint
+            fetchWithTimeout(`https://basename.app/api/reverse/${walletAddress.toLowerCase()}`, {}, 5000)
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.name) return data.name;
+                    if (data && data.basename) return data.basename;
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null)
+          ];
 
-        // Wait for first successful response or all to fail
-        const results = await Promise.allSettled(basenamePromises);
-        for (const result of results) {
-          if (result.status === 'fulfilled' && result.value) {
-            basename = result.value;
-            break;
+          const results = await Promise.allSettled(basenamePromises);
+          for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+              basename = result.value;
+              break;
+            }
           }
         }
       } catch (nameErr) {
-        console.log('Basename lookup error:', nameErr);
         // Basename is optional, so just continue
       }
       
@@ -192,40 +262,118 @@ function App() {
       let tokenHoldings = 0;
       if (ETHERSCAN_API_KEY && ETHERSCAN_API_KEY !== 'YourApiKeyToken') {
         try {
-          // Try Basescan API first with timeout
-          try {
-            const tokenResponse = await fetchWithTimeout(
-              `https://api.basescan.org/api?module=account&action=addresstokenbalance&address=${walletAddress}&page=1&offset=10000&apikey=${ETHERSCAN_API_KEY}`,
+          // Try multiple approaches in parallel
+          const tokenPromises = [
+            // Try Basescan API - tokenlist action
+            fetchWithTimeout(
+              `https://api.basescan.org/api?module=account&action=tokenlist&address=${walletAddress}&page=1&offset=10000&apikey=${ETHERSCAN_API_KEY}`,
               {},
               10000
-            );
-            const tokenData = await tokenResponse.json();
-            
-            if (tokenData.status === '1' && tokenData.result && Array.isArray(tokenData.result)) {
-              // Count unique token contracts (including NFTs and ERC-20 tokens)
-              const uniqueTokens = new Set(tokenData.result.map((token: any) => token.contractAddress));
-              tokenHoldings = uniqueTokens.size;
-            }
-          } catch (e) {
-            // Fallback to Etherscan V2 API with chainid
-            try {
-              const tokenResponse2 = await fetchWithTimeout(
-                `https://api.etherscan.io/v2/api?module=account&action=tokenlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`,
-                {},
-                10000
-              );
-              const tokenData2 = await tokenResponse2.json();
-              
-              if (tokenData2.status === '1' && tokenData2.result && Array.isArray(tokenData2.result)) {
-                const uniqueTokens = new Set(tokenData2.result.map((token: any) => token.contractAddress));
-                tokenHoldings = uniqueTokens.size;
-              }
-            } catch (e2) {
-              console.log('Token holdings fetch error:', e2);
+            )
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === '1' && data.result) {
+                      if (Array.isArray(data.result)) {
+                        return new Set(data.result.map((token: any) => 
+                          token.contractAddress || token.tokenAddress || token.address
+                        ).filter(Boolean));
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null),
+            // Try Basescan API - tokentx action (token transfers)
+            fetchWithTimeout(
+              `https://api.basescan.org/api?module=account&action=tokentx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&apikey=${ETHERSCAN_API_KEY}`,
+              {},
+              10000
+            )
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === '1' && data.result && Array.isArray(data.result)) {
+                      // Get unique contracts from token transfers
+                      return new Set(data.result.map((tx: any) => 
+                        tx.contractAddress || tx.tokenAddress
+                      ).filter(Boolean));
+                    }
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null),
+            // Try Basescan API - tokennfttx for NFTs
+            fetchWithTimeout(
+              `https://api.basescan.org/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&apikey=${ETHERSCAN_API_KEY}`,
+              {},
+              10000
+            )
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === '1' && data.result && Array.isArray(data.result)) {
+                      return new Set(data.result.map((tx: any) => 
+                        tx.contractAddress || tx.tokenAddress
+                      ).filter(Boolean));
+                    }
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null),
+            // Try Etherscan V2 API with chainid
+            fetchWithTimeout(
+              `https://api.etherscan.io/v2/api?module=account&action=tokenlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`,
+              {},
+              10000
+            )
+              .then(async (res) => {
+                try {
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === '1' && data.result && Array.isArray(data.result)) {
+                      return new Set(data.result.map((token: any) => 
+                        token.contractAddress || token.tokenAddress || token.address
+                      ).filter(Boolean));
+                    }
+                  }
+                } catch (e) {
+                  // Ignore parsing errors
+                }
+                return null;
+              })
+              .catch(() => null)
+          ];
+
+          // Wait for all promises and combine results
+          const results = await Promise.allSettled(tokenPromises);
+          const allTokens = new Set<string>();
+          
+          for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+              result.value.forEach((addr: string) => {
+                if (addr && addr !== '0x0000000000000000000000000000000000000000') {
+                  allTokens.add(addr.toLowerCase());
+                }
+              });
             }
           }
+          
+          tokenHoldings = allTokens.size;
         } catch (tokenErr) {
-          console.log('Token holdings fetch error:', tokenErr);
+          // Token holdings are optional, continue
         }
       }
 
