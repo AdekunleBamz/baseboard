@@ -8,7 +8,7 @@ interface WalletStats {
   firstTx: string;
   lastTx: string;
   basename: string | null;
-  nftCount: number;
+  tokenHoldings: number;
 }
 
 function App() {
@@ -131,41 +131,86 @@ function App() {
         txCount = parseInt(txCountData.result || '0x0', 16);
       }
       
-      // Get Basename using public resolver
+      // Get Basename using Base name resolver
       let basename: string | null = null;
       try {
-        // Check if address has a basename registered
-        // Using Basename API endpoint
-        const basenameResponse = await fetch(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`);
-        const basenameData = await basenameResponse.json();
-        
-        if (basenameData && basenameData[walletAddress.toLowerCase()]) {
-          basename = basenameData[walletAddress.toLowerCase()];
+        // Try multiple Base name resolver endpoints
+        // First try: resolver-api.basename.app (reverse lookup)
+        try {
+          const basenameResponse = await fetch(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`);
+          if (basenameResponse.ok) {
+            const basenameData = await basenameResponse.json();
+            if (basenameData && typeof basenameData === 'object') {
+              // Check if response is an object with address as key
+              if (basenameData[walletAddress.toLowerCase()]) {
+                basename = basenameData[walletAddress.toLowerCase()];
+              } else if (Array.isArray(basenameData) && basenameData.length > 0) {
+                // If response is an array, get first name
+                basename = basenameData[0]?.name || basenameData[0];
+              }
+            }
+          }
+        } catch (e) {
+          // Try alternative: Base name service direct lookup
+          try {
+            const basenameResponse2 = await fetch(`https://api.basename.app/v1/names/${walletAddress.toLowerCase()}`);
+            if (basenameResponse2.ok) {
+              const basenameData2 = await basenameResponse2.json();
+              if (basenameData2 && basenameData2.name) {
+                basename = basenameData2.name;
+              } else if (basenameData2 && typeof basenameData2 === 'string') {
+                basename = basenameData2;
+              }
+            }
+          } catch (e2) {
+            // Try using Base name service GraphQL or REST API
+            try {
+              // Alternative endpoint: try reverse lookup
+              const basenameResponse3 = await fetch(`https://basename.app/api/names/reverse/${walletAddress.toLowerCase()}`);
+              if (basenameResponse3.ok) {
+                const basenameData3 = await basenameResponse3.json();
+                if (basenameData3 && basenameData3.name) {
+                  basename = basenameData3.name;
+                }
+              }
+            } catch (e3) {
+              console.log('Basename lookup not available');
+            }
+          }
         }
       } catch (nameErr) {
-        console.log('Basename lookup not available:', nameErr);
+        console.log('Basename lookup error:', nameErr);
         // Basename is optional, so just continue
       }
       
-      // Get NFT holdings using Etherscan API V2 (if API key available)
-      let nftCount = 0;
+      // Get Token holdings (includes NFTs and other tokens) using Basescan API
+      let tokenHoldings = 0;
       if (ETHERSCAN_API_KEY && ETHERSCAN_API_KEY !== 'YourApiKeyToken') {
         try {
-          const nftResponse = await fetch(
-            `https://api.etherscan.io/v2/api?module=account&action=tokennfttx&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=1000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
+          // Try Basescan API first
+          const tokenResponse = await fetch(
+            `https://api.basescan.org/api?module=account&action=addresstokenbalance&address=${walletAddress}&page=1&offset=10000&apikey=${ETHERSCAN_API_KEY}`
           );
-          const nftData = await nftResponse.json();
+          const tokenData = await tokenResponse.json();
           
-          if (nftData.status === '1' && nftData.result) {
-            // Count unique NFT contracts where user received tokens
-            const receivedNFTs = nftData.result.filter((tx: any) => 
-              tx.to?.toLowerCase() === walletAddress.toLowerCase()
+          if (tokenData.status === '1' && tokenData.result && Array.isArray(tokenData.result)) {
+            // Count unique token contracts (including NFTs and ERC-20 tokens)
+            const uniqueTokens = new Set(tokenData.result.map((token: any) => token.contractAddress));
+            tokenHoldings = uniqueTokens.size;
+          } else {
+            // Fallback to Etherscan V2 API with chainid
+            const tokenResponse2 = await fetch(
+              `https://api.etherscan.io/v2/api?module=account&action=tokenlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
             );
-            const uniqueContracts = new Set(receivedNFTs.map((tx: any) => tx.contractAddress));
-            nftCount = uniqueContracts.size;
+            const tokenData2 = await tokenResponse2.json();
+            
+            if (tokenData2.status === '1' && tokenData2.result && Array.isArray(tokenData2.result)) {
+              const uniqueTokens = new Set(tokenData2.result.map((token: any) => token.contractAddress));
+              tokenHoldings = uniqueTokens.size;
+            }
           }
-        } catch (nftErr) {
-          console.log('NFT fetch error:', nftErr);
+        } catch (tokenErr) {
+          console.log('Token holdings fetch error:', tokenErr);
         }
       }
 
@@ -176,7 +221,7 @@ function App() {
         firstTx,
         lastTx,
         basename,
-        nftCount
+        tokenHoldings
       });
       
     } catch (err) {
@@ -366,23 +411,10 @@ function App() {
                   border: '2px solid rgba(0, 82, 255, 0.2)',
                   boxShadow: '0 4px 20px rgba(0, 82, 255, 0.15)'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                    <h3 style={{ margin: 0, color: '#0052FF', fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0, color: '#0052FF', fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                       <span style={{ fontSize: '20px' }}>📊</span> Wallet Analysis
                     </h3>
-                    {stats.basename && (
-                      <div style={{
-                        padding: '6px 12px',
-                        background: 'linear-gradient(135deg, #0052FF 0%, #8A2BE2 100%)',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        color: 'white',
-                        boxShadow: '0 2px 8px rgba(0, 82, 255, 0.3)'
-                      }}>
-                        🔵 {stats.basename}
-                      </div>
-                    )}
                   </div>
                   
                   <div style={{ 
@@ -421,8 +453,91 @@ function App() {
                       boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)',
                       textAlign: 'center'
                     }}>
-                      <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '6px', fontWeight: '500' }}>NFTs</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', lineHeight: '1.2' }}>{stats.nftCount}</div>
+                      <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '6px', fontWeight: '500' }}>Token Holdings</div>
+                      <div style={{ fontSize: '22px', fontWeight: 'bold', lineHeight: '1.2' }}>{stats.tokenHoldings}</div>
+                    </div>
+                  </div>
+
+                  {/* Base Name Display */}
+                  <div style={{
+                    marginBottom: '12px',
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(0, 82, 255, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                  }}>
+                    <div style={{ flex: 1, minWidth: '120px' }}>
+                      <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px', fontWeight: '600' }}>Base Name</div>
+                      <div style={{ 
+                        fontSize: '13px', 
+                        color: stats.basename ? '#0052FF' : '#999',
+                        fontWeight: '500'
+                      }}>
+                        {stats.basename || 'No Base name'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <a
+                        href="https://base.org/name"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          padding: '6px 12px',
+                          background: 'linear-gradient(135deg, #0052FF 0%, #8A2BE2 100%)',
+                          borderRadius: '8px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          color: 'white',
+                          textDecoration: 'none',
+                          boxShadow: '0 2px 6px rgba(0, 82, 255, 0.3)',
+                          transition: 'all 0.2s',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-block'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 10px rgba(0, 82, 255, 0.4)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 82, 255, 0.3)';
+                        }}
+                      >
+                        Register Name
+                      </a>
+                      <a
+                        href={`https://basescan.org/address/${stats.address}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          padding: '6px 12px',
+                          background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
+                          borderRadius: '8px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          color: 'white',
+                          textDecoration: 'none',
+                          boxShadow: '0 2px 6px rgba(99, 102, 241, 0.3)',
+                          transition: 'all 0.2s',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-block'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 10px rgba(99, 102, 241, 0.4)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 6px rgba(99, 102, 241, 0.3)';
+                        }}
+                      >
+                        Basescan
+                      </a>
                     </div>
                   </div>
 
