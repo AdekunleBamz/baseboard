@@ -11,6 +11,16 @@ interface WalletStats {
   tokenHoldings: number;
 }
 
+// Helper function to add timeout to fetch requests
+function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = 8000): Promise<Response> {
+  return Promise.race([
+    fetch(url, options),
+    new Promise<Response>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), timeout)
+    )
+  ]) as Promise<Response>;
+}
+
 function App() {
   const [walletAddress, setWalletAddress] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -45,7 +55,7 @@ function App() {
       const BASE_CHAIN_ID = 8453;
       
       // Get balance from Base RPC
-      const balanceResponse = await fetch(BASE_RPC, {
+      const balanceResponse = await fetchWithTimeout(BASE_RPC, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -54,7 +64,7 @@ function App() {
           params: [walletAddress, 'latest'],
           id: 1
         })
-      });
+      }, 10000);
       const balanceData = await balanceResponse.json();
       const balanceWei = BigInt(balanceData.result || '0');
       const balanceEth = (Number(balanceWei) / 1e18).toFixed(4);
@@ -67,8 +77,10 @@ function App() {
       if (ETHERSCAN_API_KEY && ETHERSCAN_API_KEY !== 'YourApiKeyToken') {
         try {
           // Fetch transaction list from Etherscan V2
-          const txResponse = await fetch(
-            `https://api.etherscan.io/v2/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
+          const txResponse = await fetchWithTimeout(
+            `https://api.etherscan.io/v2/api?module=account&action=txlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`,
+            {},
+            10000
           );
           const txData = await txResponse.json();
           
@@ -102,7 +114,7 @@ function App() {
         } catch (txErr) {
           console.log('Transaction fetch error:', txErr);
           // Fallback to RPC transaction count
-          const txCountResponse = await fetch(BASE_RPC, {
+          const txCountResponse = await fetchWithTimeout(BASE_RPC, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -111,13 +123,13 @@ function App() {
               params: [walletAddress, 'latest'],
               id: 2
             })
-          });
+          }, 10000);
           const txCountData = await txCountResponse.json();
           txCount = parseInt(txCountData.result || '0x0', 16);
         }
       } else {
         // Fallback: Get transaction count from RPC only
-        const txCountResponse = await fetch(BASE_RPC, {
+        const txCountResponse = await fetchWithTimeout(BASE_RPC, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -126,56 +138,49 @@ function App() {
             params: [walletAddress, 'latest'],
             id: 2
           })
-        });
+        }, 10000);
         const txCountData = await txCountResponse.json();
         txCount = parseInt(txCountData.result || '0x0', 16);
       }
       
-      // Get Basename using Base name resolver
+      // Get Basename using Base name resolver (with timeout and parallel attempts)
       let basename: string | null = null;
       try {
-        // Try multiple Base name resolver endpoints
-        // First try: resolver-api.basename.app (reverse lookup)
-        try {
-          const basenameResponse = await fetch(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`);
-          if (basenameResponse.ok) {
-            const basenameData = await basenameResponse.json();
-            if (basenameData && typeof basenameData === 'object') {
-              // Check if response is an object with address as key
-              if (basenameData[walletAddress.toLowerCase()]) {
-                basename = basenameData[walletAddress.toLowerCase()];
-              } else if (Array.isArray(basenameData) && basenameData.length > 0) {
-                // If response is an array, get first name
-                basename = basenameData[0]?.name || basenameData[0];
-              }
-            }
-          }
-        } catch (e) {
-          // Try alternative: Base name service direct lookup
-          try {
-            const basenameResponse2 = await fetch(`https://api.basename.app/v1/names/${walletAddress.toLowerCase()}`);
-            if (basenameResponse2.ok) {
-              const basenameData2 = await basenameResponse2.json();
-              if (basenameData2 && basenameData2.name) {
-                basename = basenameData2.name;
-              } else if (basenameData2 && typeof basenameData2 === 'string') {
-                basename = basenameData2;
-              }
-            }
-          } catch (e2) {
-            // Try using Base name service GraphQL or REST API
-            try {
-              // Alternative endpoint: try reverse lookup
-              const basenameResponse3 = await fetch(`https://basename.app/api/names/reverse/${walletAddress.toLowerCase()}`);
-              if (basenameResponse3.ok) {
-                const basenameData3 = await basenameResponse3.json();
-                if (basenameData3 && basenameData3.name) {
-                  basename = basenameData3.name;
+        // Try multiple Base name resolver endpoints in parallel with timeout
+        const basenamePromises = [
+          fetchWithTimeout(`https://resolver-api.basename.app/v1/names?addresses=${walletAddress.toLowerCase()}`, {}, 5000)
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json();
+                if (data && typeof data === 'object') {
+                  if (data[walletAddress.toLowerCase()]) {
+                    return data[walletAddress.toLowerCase()];
+                  } else if (Array.isArray(data) && data.length > 0) {
+                    return data[0]?.name || data[0];
+                  }
                 }
               }
-            } catch (e3) {
-              console.log('Basename lookup not available');
-            }
+              return null;
+            })
+            .catch(() => null),
+          fetchWithTimeout(`https://api.basename.app/v1/names/${walletAddress.toLowerCase()}`, {}, 5000)
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json();
+                if (data && data.name) return data.name;
+                if (data && typeof data === 'string') return data;
+              }
+              return null;
+            })
+            .catch(() => null)
+        ];
+
+        // Wait for first successful response or all to fail
+        const results = await Promise.allSettled(basenamePromises);
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value) {
+            basename = result.value;
+            break;
           }
         }
       } catch (nameErr) {
@@ -187,26 +192,36 @@ function App() {
       let tokenHoldings = 0;
       if (ETHERSCAN_API_KEY && ETHERSCAN_API_KEY !== 'YourApiKeyToken') {
         try {
-          // Try Basescan API first
-          const tokenResponse = await fetch(
-            `https://api.basescan.org/api?module=account&action=addresstokenbalance&address=${walletAddress}&page=1&offset=10000&apikey=${ETHERSCAN_API_KEY}`
-          );
-          const tokenData = await tokenResponse.json();
-          
-          if (tokenData.status === '1' && tokenData.result && Array.isArray(tokenData.result)) {
-            // Count unique token contracts (including NFTs and ERC-20 tokens)
-            const uniqueTokens = new Set(tokenData.result.map((token: any) => token.contractAddress));
-            tokenHoldings = uniqueTokens.size;
-          } else {
-            // Fallback to Etherscan V2 API with chainid
-            const tokenResponse2 = await fetch(
-              `https://api.etherscan.io/v2/api?module=account&action=tokenlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`
+          // Try Basescan API first with timeout
+          try {
+            const tokenResponse = await fetchWithTimeout(
+              `https://api.basescan.org/api?module=account&action=addresstokenbalance&address=${walletAddress}&page=1&offset=10000&apikey=${ETHERSCAN_API_KEY}`,
+              {},
+              10000
             );
-            const tokenData2 = await tokenResponse2.json();
+            const tokenData = await tokenResponse.json();
             
-            if (tokenData2.status === '1' && tokenData2.result && Array.isArray(tokenData2.result)) {
-              const uniqueTokens = new Set(tokenData2.result.map((token: any) => token.contractAddress));
+            if (tokenData.status === '1' && tokenData.result && Array.isArray(tokenData.result)) {
+              // Count unique token contracts (including NFTs and ERC-20 tokens)
+              const uniqueTokens = new Set(tokenData.result.map((token: any) => token.contractAddress));
               tokenHoldings = uniqueTokens.size;
+            }
+          } catch (e) {
+            // Fallback to Etherscan V2 API with chainid
+            try {
+              const tokenResponse2 = await fetchWithTimeout(
+                `https://api.etherscan.io/v2/api?module=account&action=tokenlist&address=${walletAddress}&startblock=0&endblock=99999999&page=1&offset=10000&sort=desc&chainid=${BASE_CHAIN_ID}&apikey=${ETHERSCAN_API_KEY}`,
+                {},
+                10000
+              );
+              const tokenData2 = await tokenResponse2.json();
+              
+              if (tokenData2.status === '1' && tokenData2.result && Array.isArray(tokenData2.result)) {
+                const uniqueTokens = new Set(tokenData2.result.map((token: any) => token.contractAddress));
+                tokenHoldings = uniqueTokens.size;
+              }
+            } catch (e2) {
+              console.log('Token holdings fetch error:', e2);
             }
           }
         } catch (tokenErr) {
